@@ -1,7 +1,6 @@
 streamlit
-tensorflow>=2.21.0
+tflite-runtime
 numpy
 Pillow
 matplotlib
 requests
-h5py
