@@ -79,6 +79,8 @@ def predict_tflite(interpreter, input_data):
     return interpreter.get_tensor(output_details[0]['index'])[0]
 
 # ── Helpers ──────────────────────────────────────────────────
+# PENTING: urutan kelas harus sama persis dengan class_indices dari training di Colab
+# Hasil training: {'anorganik': 0, 'b3': 1, 'organik': 2}
 CLASS_NAMES = ['anorganik', 'b3', 'organik']
 CLASS_INFO  = {
     'organik':   {'icon':'🍃','desc':'Sampah yang dapat terurai secara alami.','contoh':'Sisa makanan, daun kering, kulit buah','badge':'badge-organik'},
@@ -86,15 +88,19 @@ CLASS_INFO  = {
     'b3':        {'icon':'⚠️','desc':'Bahan Berbahaya dan Beracun — butuh penanganan khusus.','contoh':'Baterai, lampu neon, obat kadaluarsa, cat','badge':'badge-b3'},
 }
 
+# PERBAIKAN PENTING: kedua model (CNN dan VGG16) dilatih dengan input 224x224
+# dan normalisasi sederhana (rescale 1./255), BUKAN preprocessing standar VGG16
+# (mean subtraction ImageNet). Preprocessing di app HARUS sama persis dengan
+# preprocessing saat training di Colab, supaya hasil prediksi konsisten/akurat.
+
 def preprocess_cnn(img):
-    img = img.resize((150,150)).convert('RGB')
-    arr = np.array(img, dtype=np.float32) / 255.0
+    img = img.resize((224, 224)).convert('RGB')   # diperbaiki dari 150x150 -> 224x224
+    arr = np.array(img, dtype=np.float32) / 255.0  # normalisasi sama seperti training
     return np.expand_dims(arr, 0)
 
 def preprocess_vgg(img):
-    img = img.resize((224,224)).convert('RGB')
-    arr = np.array(img, dtype=np.float32)
-    arr -= [103.939, 116.779, 123.68]  # VGG16 preprocess
+    img = img.resize((224, 224)).convert('RGB')
+    arr = np.array(img, dtype=np.float32) / 255.0  # diperbaiki: rescale 1/255, BUKAN mean subtraction
     return np.expand_dims(arr, 0)
 
 def confidence_bar(probs, title):
@@ -176,31 +182,33 @@ with tab1:
 # ════════════════════════════════════════════════════════════
 with tab2:
     st.markdown("### 📊 Perbandingan Performa CNN vs VGG16")
-    metrics = {'Accuracy':(95.65,100.0),'Precision':(95.83,100.0),'Recall':(95.83,100.0),'F1-Score':(95.56,100.0)}
+    # Angka di bawah ini diambil dari hasil evaluasi nyata pada data TEST
+    # (lihat notebook Colab, bagian Evaluasi Model)
+    metrics = {'Accuracy':(73.91,91.30),'Precision':(80.56,93.33),'Recall':(75.00,90.48),'F1-Score':(74.01,90.74)}
     col1, col2 = st.columns(2)
     with col1:
         st.markdown('<div class="card"><h4>CNN from Scratch</h4>', unsafe_allow_html=True)
         for m,(v,_) in metrics.items():
             st.markdown(f'<div class="metric-box"><div class="metric-label">{m}</div><div class="metric-value">{v:.2f}%</div></div>', unsafe_allow_html=True)
-        st.markdown("**Waktu training:** ± 3 menit (70 epoch)</div>", unsafe_allow_html=True)
+        st.markdown("**Waktu training:** ± 3.5 menit (43 epoch)</div>", unsafe_allow_html=True)
     with col2:
         st.markdown('<div class="card"><h4>VGG16 Transfer Learning</h4>', unsafe_allow_html=True)
         for m,(_,v) in metrics.items():
             st.markdown(f'<div class="metric-box"><div class="metric-label">{m}</div><div class="metric-value">{v:.2f}%</div></div>', unsafe_allow_html=True)
-        st.markdown("**Waktu training:** ± 1 menit (18 epoch)</div>", unsafe_allow_html=True)
+        st.markdown("**Waktu training:** ± 2 menit (30 epoch)</div>", unsafe_allow_html=True)
 
     fig, ax = plt.subplots(figsize=(9,4))
     x = np.arange(len(metrics)); w = 0.35
     b1 = ax.bar(x-w/2,[v[0] for v in metrics.values()],w,label='CNN from Scratch',color='#4361ee')
     b2 = ax.bar(x+w/2,[v[1] for v in metrics.values()],w,label='VGG16 Transfer Learning',color='#2d6a4f')
-    ax.set_ylim(80,105); ax.set_xticks(x); ax.set_xticklabels(metrics.keys())
+    ax.set_ylim(0,105); ax.set_xticks(x); ax.set_xticklabels(metrics.keys())
     ax.set_ylabel('Score (%)'); ax.set_title('Perbandingan Metrik Evaluasi',fontweight='bold')
     ax.legend(); ax.grid(axis='y',alpha=0.3); ax.spines[['top','right']].set_visible(False)
     for bar in list(b1)+list(b2):
-        ax.text(bar.get_x()+bar.get_width()/2,bar.get_height()+0.3,f'{bar.get_height():.2f}%',ha='center',va='bottom',fontsize=8)
+        ax.text(bar.get_x()+bar.get_width()/2,bar.get_height()+1.5,f'{bar.get_height():.2f}%',ha='center',va='bottom',fontsize=8)
     plt.tight_layout(); st.pyplot(fig)
 
-    st.markdown('<div class="card">💡 <b>Analisis:</b> VGG16 mencapai 100% di semua metrik hanya dalam 18 epoch berkat fitur ImageNet. CNN from Scratch tetap solid ~95% meski dilatih dari nol. Untuk dataset kecil (150 foto), Transfer Learning sangat direkomendasikan.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="card">💡 <b>Analisis:</b> VGG16 mengungguli CNN di semua metrik (Accuracy 91.30% vs 73.91%) berkat fitur visual dari ImageNet yang sudah teroptimasi, sekaligus waktu training lebih singkat. CNN from Scratch tetap solid (~74-80%) meski dilatih dari nol dengan dataset kecil (150 foto). Untuk kasus dataset terbatas seperti ini, Transfer Learning sangat direkomendasikan.</div>', unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════════════
 with tab3:
